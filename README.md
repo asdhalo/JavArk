@@ -1,5 +1,8 @@
-<span style="color:#e60000;">******请务必先用JavSP刮削器下载封面图后再用本工具导入“整理完成” 的视频文件夹
-JavSP下载地址 https://github.com/Yuukiy/JavSP/releases/tag/v1.8*</span>****</span>
+<span style="font-size:48px;"><span style="font-size:14px;"><span style="color:#e60000;">******<span style="font-size:36px;">请务必先用JavSP刮削器下载封面图后再用本工具导入“整理完成” 的视频文件夹
+
+  JavSP下载地址
+  
+  https://github.com/Yuukiy/JavSP/releases/tag/v1.8</span>*</span>****</span></span></span>
 
 
 # JavArk
