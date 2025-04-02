@@ -133,9 +133,14 @@ public:
     // 新增：设置封面模式
     void setUseFanartMode(bool useFanart) { m_useFanartMode = useFanart; update(); }
     bool useFanartMode() const { return m_useFanartMode; }
+    
+    // 新增：选中状态管理
+    bool isSelected() const { return m_selected; }
+    void setSelected(bool selected) { m_selected = selected; update(); }
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override; // 新增：双击事件
     void paintEvent(QPaintEvent *event) override;
     void enterEvent(QEnterEvent *event) override;
     void leaveEvent(QEvent *event) override;
@@ -145,7 +150,8 @@ private:
     QLabel *m_titleLabel;
     int m_thumbnailSize;
     bool m_hover;
-    bool m_useFanartMode; // 新增：是否使用背景图作为封面
+    bool m_useFanartMode; // 是否使用背景图作为封面
+    bool m_selected;      // 新增：是否被选中
 };
 
 #endif // MAINWINDOW_H 

@@ -742,7 +742,8 @@ VideoWidget::VideoWidget(std::shared_ptr<VideoItem> video, int thumbnailSize, QW
       m_video(video),
       m_thumbnailSize(thumbnailSize),
       m_hover(false),
-      m_useFanartMode(false) // 默认使用海报模式
+      m_useFanartMode(false), // 默认使用海报模式
+      m_selected(false)       // 初始为未选中状态
 {
     // 设置大小策略和最小尺寸
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
@@ -774,10 +775,29 @@ void VideoWidget::setThumbnailSize(int size)
 void VideoWidget::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton) {
-        // 播放视频
-        m_video->play();
+        // 改为设置选中状态而不是播放视频
+        setSelected(true);
+        
+        // 取消选择其他视频小部件（遍历父窗口的所有VideoWidget）
+        if (parent()) {
+            QList<VideoWidget*> siblings = parent()->findChildren<VideoWidget*>();
+            for (VideoWidget* widget : siblings) {
+                if (widget != this && widget->isSelected()) {
+                    widget->setSelected(false);
+                }
+            }
+        }
     }
     QWidget::mousePressEvent(event);
+}
+
+void VideoWidget::mouseDoubleClickEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton) {
+        // 双击时播放视频
+        m_video->play();
+    }
+    QWidget::mouseDoubleClickEvent(event);
 }
 
 void VideoWidget::paintEvent(QPaintEvent *event)
@@ -826,6 +846,12 @@ void VideoWidget::paintEvent(QPaintEvent *event)
         int iconX = (width() - iconSize) / 2;
         int iconY = (m_thumbnailSize - iconSize) / 2;
         painter.drawPixmap(iconX, iconY, scaledIcon);
+    }
+    // 选中状态时绘制高亮边框
+    else if (m_selected) {
+        // 使用高亮橙色边框表示选中状态
+        painter.setPen(QPen(QColor(255, 165, 0), 3));
+        painter.drawRect(x-2, y-2, image.width()+4, image.height()+4);
     }
     
     painter.drawPixmap(x, y, image);
