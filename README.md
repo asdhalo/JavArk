@@ -1,4 +1,4 @@
-<span style="font-size:48px;"><span style="font-size:14px;"><span style="color:#e60000;">******<span style="font-size:36px;">请务必先用JavSP刮削器下载封面图后再用本工具导入“整理完成” 的视频文件夹
+<span style="font-size:48px;"><span style="font-size:14px;"><span style="color:#e60000;">******<span style="font-size:36px;">请务必先用JavSP刮削器下载封面图后再用本工具导入"整理完成" 的视频文件夹
 
   JavSP下载地址
   
@@ -7,7 +7,7 @@
 
 # JavArk
 
-一个针对Windows系统优化的本地视频管理库应用程序。
+一个针对Windows系统下，管理AV视频的本地视频管理库应用程序。
 
 ## 功能特点
 
@@ -36,7 +36,7 @@
 
 1. 安装Qt 6
 2. 安装CMake
-3. 安装Visual Studio 2019或更高版本(包含MSVC编译器)
+3. 安装Visual Studio 2022或更高版本(包含MSVC编译器)
 4. 克隆或下载本项目
 
 ```bash
@@ -45,7 +45,7 @@ mkdir build
 cd build
 
 # 配置CMake项目
-cmake -G "Visual Studio 16 2019" -A x64 -DCMAKE_PREFIX_PATH=D:\Qt\6.5.0\msvc2019_64 ..
+cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH=D:\Qt\6.5.0\msvc2019_64 ..
 
 # 构建项目
 cmake --build . --config Release

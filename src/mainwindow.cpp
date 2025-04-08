@@ -9,6 +9,7 @@
 #include <QStyleOption>
 #include <QDebug>
 #include <QMessageBox>
+#include <QTimer>
 
 // 默认配置
 const int DEFAULT_GRID_COLUMNS = 5;
@@ -195,7 +196,8 @@ void MainWindow::createUI()
     m_progressBar->setVisible(false);
     m_progressBar->setFixedHeight(20);
     m_progressBar->setTextVisible(true);
-    m_progressBar->setMinimumWidth(150);
+    m_progressBar->setMinimumWidth(300); // 可以适当加宽
+    m_progressBar->setStyleSheet("QProgressBar { border: 1px solid grey; border-radius: 5px; text-align: center; background-color: #3A3A42; } QProgressBar::chunk { background-color: #0078D7; width: 10px; margin: 0.5px; }"); // 添加一些样式
     
     // 添加控件到工具栏布局
     m_toolbarLayout->addWidget(m_addDirButton);
@@ -210,7 +212,6 @@ void MainWindow::createUI()
     
     // 添加控件到底部状态栏布局
     m_bottomLayout->addWidget(m_statusLabel, 1);
-    m_bottomLayout->addWidget(m_progressBar);
     
     // 创建滚动区域和网格布局
     m_scrollArea = new QScrollArea(this);
@@ -228,7 +229,17 @@ void MainWindow::createUI()
     
     // 添加到主布局
     m_mainLayout->addLayout(m_toolbarLayout);
-    m_mainLayout->addWidget(m_scrollArea);
+
+    // ---- 新增：创建并添加居中的进度条布局 ----
+    QHBoxLayout *progressLayout = new QHBoxLayout();
+    progressLayout->setContentsMargins(0, 5, 0, 5); // 添加垂直边距
+    progressLayout->addStretch(1);
+    progressLayout->addWidget(m_progressBar);
+    progressLayout->addStretch(1);
+    m_mainLayout->addLayout(progressLayout);
+    // ---- 结束新增 ----
+
+    m_mainLayout->addWidget(m_scrollArea); // 进度条在滚动区域之上
     m_mainLayout->addLayout(m_bottomLayout);
 }
 
@@ -246,48 +257,42 @@ void MainWindow::createMenus()
 
 void MainWindow::updateDirectoryList()
 {
-    // 清除当前目录动作
-    for (QAction *action : m_dirActions) {
-        m_dirMenu->removeAction(action);
-    }
+    // 清除旧的菜单项和动作
+    m_dirMenu->clear();
+    // 释放旧的QAction对象内存
+    qDeleteAll(m_dirActions);
     m_dirActions.clear();
-    
-    // 添加目录动作
+
     QStringList dirs = m_library->directories();
-    for (const QString &dir : dirs) {
-        // 创建目录标签
-        QAction *label = new QAction(dir, this);
-        label->setEnabled(false);
-        m_dirActions.append(label);
-        m_dirMenu->addAction(label);
-        
-        // 删除目录选项
-        QAction *removeOnly = new QAction(tr("  删除目录"), this);
-        removeOnly->setData(dir);
-        connect(removeOnly, &QAction::triggered, this, [this, dir]() {
-            m_library->removeDirectory(dir, false);
-            updateDirectoryList();
-        });
-        m_dirActions.append(removeOnly);
-        m_dirMenu->addAction(removeOnly);
-        
-        // 添加分隔线
-        QAction *separator = new QAction(this);
-        separator->setSeparator(true);
-        m_dirActions.append(separator);
-        m_dirMenu->addAction(separator);
-    }
-    
-    // 未添加目录时显示提示信息
     if (dirs.isEmpty()) {
-        QAction *action = new QAction(tr("(无媒体目录)"), this);
-        action->setEnabled(false);
-        m_dirActions.append(action);
-        m_dirMenu->addAction(action);
+        QAction *emptyAction = new QAction(tr("没有媒体库目录"), this);
+        emptyAction->setEnabled(false);
+        m_dirMenu->addAction(emptyAction);
+        m_dirActions.append(emptyAction); // 即使禁用也添加到列表，以便后续清理
+        m_removeDirButton->setEnabled(false); // 禁用移除按钮
+    } else {
+        for (const QString &dir : dirs) {
+            QAction *action = new QAction(dir, this);
+            // 使用 lambda 连接信号和槽，捕获目录路径
+            connect(action, &QAction::triggered, this, [this, dir]() {
+                // 弹出确认对话框
+                QMessageBox::StandardButton reply;
+                reply = QMessageBox::question(this, tr("移除目录"),
+                                              tr("确定要从库中移除目录 '%1' 吗？\\n(这不会删除硬盘上的实际文件)").arg(dir),
+                                              QMessageBox::Yes|QMessageBox::No);
+                if (reply == QMessageBox::Yes) {
+                    m_library->removeDirectory(dir); // 从库中移除目录
+                    updateDirectoryList();           // 更新目录菜单显示
+
+                    // 调用新的刷新函数来更新视频网格
+                    refreshVideoDisplay();
+                }
+            });
+            m_dirMenu->addAction(action);
+            m_dirActions.append(action); // 添加到列表，以便后续清理
+        }
+        m_removeDirButton->setEnabled(true); // 启用移除按钮
     }
-    
-    // 更新移除目录按钮状态
-    m_removeDirButton->setEnabled(!dirs.isEmpty());
 }
 
 void MainWindow::onAddDirectory()
@@ -358,20 +363,10 @@ void MainWindow::onScanFinished()
 {
     // 隐藏进度条
     m_progressBar->setVisible(false);
-    
-    // 排序视频
-    sortVideos();
-    
-    // 如果有搜索条件，应用过滤
-    if (!m_searchText.isEmpty()) {
-        filterVideos();
-    } else {
-        m_statusLabel->setText(tr("就绪 - %1 个视频").arg(m_videoWidgets.size()));
-    }
-    
-    // 调整网格列数
-    adjustGridColumns();
-    
+
+    // 调用新的刷新函数
+    refreshVideoDisplay();
+
     // 启用扫描按钮
     m_scanButton->setEnabled(true);
 }
@@ -454,6 +449,13 @@ void MainWindow::loadSettings()
     
     // 加载后调整网格列数
     adjustGridColumns();
+    
+    // 如果加载了目录，则自动开始扫描以加载视频和封面
+    // 使用 QTimer::singleShot 将扫描操作推迟到事件循环空闲时执行，
+    // 避免阻塞 MainWindow 的构造和显示过程。
+    if (!m_library->directories().isEmpty()) {
+         QTimer::singleShot(0, this, &MainWindow::onScanLibrary);
+    }
 }
 
 void MainWindow::onToggleCoverMode()
@@ -733,6 +735,32 @@ void MainWindow::reLayoutFilteredVideos()
         m_gridLayout->addWidget(m_filteredVideoWidgets[i], row, col);
         m_filteredVideoWidgets[i]->show();
     }
+}
+
+// 新增：刷新视频显示的辅助函数
+void MainWindow::refreshVideoDisplay()
+{
+    clearVideoWidgets(); // 清除现有控件和 m_videoWidgets 列表
+
+    // 从库中重新填充 m_videoWidgets 列表
+    for (const auto& video : m_library->videos()) {
+        VideoWidget *widget = new VideoWidget(video, m_thumbnailSize, this);
+        widget->setUseFanartMode(m_useFanartMode);
+        m_videoWidgets.append(widget);
+    }
+
+    sortVideos(); // 对新填充的 m_videoWidgets 进行排序
+
+    // 应用过滤或直接重新布局
+    if (!m_searchText.isEmpty()) {
+        filterVideos(); // 这个函数会过滤并调用 reLayoutFilteredVideos，同时更新状态标签
+    } else {
+        // 如果没有搜索，直接布局所有视频并更新状态标签
+        m_statusLabel->setText(tr("就绪 - %1 个视频").arg(m_videoWidgets.size()));
+        reLayoutVideos(); // 使用排序后的 m_videoWidgets 重新布局网格
+    }
+
+    adjustGridColumns(); // 根据需要调整网格列数
 }
 
 // ------ VideoWidget 实现 ------

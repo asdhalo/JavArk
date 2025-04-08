@@ -71,6 +71,7 @@ private:
     void sortVideos();           // 新增：排序视频
     void updateSortButtonText(); // 新增：更新排序按钮文本
     void filterVideos();         // 新增：根据搜索条件过滤视频
+    void refreshVideoDisplay(); // 新增：刷新视频网格显示
 
     // 视频库
     VideoLibrary *m_library;

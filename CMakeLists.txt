@@ -13,6 +13,9 @@ if(WIN32)
     set(CMAKE_INSTALL_PREFIX "JavArk")
 endif()
 
+# 设置Qt6的路径
+set(CMAKE_PREFIX_PATH "D:/Qt6/6.8.3/msvc2022_64")
+
 find_package(Qt6 COMPONENTS Core Gui Widgets Concurrent REQUIRED)
 
 set(SOURCES
