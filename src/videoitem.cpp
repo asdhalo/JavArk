@@ -6,9 +6,10 @@
 #include <Windows.h>
 #include <shellapi.h>
 
-VideoItem::VideoItem(const QString &filePath)
+VideoItem::VideoItem(const QString &filePath, bool loadImagesNow)
     : m_filePath(filePath),
-      m_fileSize(0)
+      m_fileSize(0),
+      m_imagesLoaded(false)
 {
     QFileInfo fileInfo(filePath);
     m_fileName = fileInfo.fileName();
@@ -17,12 +18,19 @@ VideoItem::VideoItem(const QString &filePath)
     m_creationTime = fileInfo.birthTime();
     m_modifiedTime = fileInfo.lastModified();
     
-    // 加载图片
-    loadImages();
+    // 只在需要时加载图片
+    if (loadImagesNow) {
+        loadImages();
+    }
 }
 
 void VideoItem::loadImages()
 {
+    // 如果图片已经加载过，直接返回
+    if (m_imagesLoaded) {
+        return;
+    }
+
     QDir folder(m_folderPath);
     
     // 查找海报图片
@@ -31,7 +39,6 @@ void VideoItem::loadImages()
         m_posterImage = QPixmap(posterPath);
         if (m_posterImage.isNull()) {
             qDebug() << "无法加载海报图片:" << posterPath;
-            // 创建一个简单的默认图片
             createDefaultPoster();
         }
     } else {
@@ -39,7 +46,6 @@ void VideoItem::loadImages()
         m_posterImage = QPixmap(":/icons/default_poster.png");
         if (m_posterImage.isNull()) {
             qDebug() << "无法加载默认海报图片";
-            // 创建一个简单的默认图片
             createDefaultPoster();
         }
     }
@@ -60,6 +66,8 @@ void VideoItem::loadImages()
             createDefaultFanart();
         }
     }
+
+    m_imagesLoaded = true;
 }
 
 void VideoItem::createDefaultPoster()
@@ -89,4 +97,20 @@ bool VideoItem::play() const
 {
     // 使用系统默认程序打开视频
     return QDesktopServices::openUrl(QUrl::fromLocalFile(m_filePath));
+}
+
+const QPixmap& VideoItem::posterImage() const
+{
+    if (!m_imagesLoaded) {
+        const_cast<VideoItem*>(this)->loadImages();
+    }
+    return m_posterImage;
+}
+
+const QPixmap& VideoItem::fanartImage() const
+{
+    if (!m_imagesLoaded) {
+        const_cast<VideoItem*>(this)->loadImages();
+    }
+    return m_fanartImage;
 } 

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <QFile>
 #include <QDebug>
+#include <QDirIterator>
 
 // 支持的视频扩展名
 static const QStringList VIDEO_EXTENSIONS = {
@@ -133,30 +134,15 @@ QVector<std::shared_ptr<VideoItem>> VideoLibrary::findVideosInDirectory(const QS
     QVector<std::shared_ptr<VideoItem>> results;
     QDir dir(path);
     
-    // 获取视频文件
-    QStringList videoFiles;
-    for (const QString &ext : VIDEO_EXTENSIONS) {
-        dir.setNameFilters(QStringList(ext));
-        dir.setFilter(QDir::Files);
-        videoFiles.append(dir.entryList());
-    }
-    
-    // 添加到结果
-    for (const QString &file : videoFiles) {
-        QString filePath = dir.filePath(file);
+    // 使用QDirIterator进行递归扫描，更高效
+    QDirIterator it(path, VIDEO_EXTENSIONS, QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        QString filePath = it.next();
         if (isVideoFile(filePath)) {
-            results.append(std::make_shared<VideoItem>(filePath));
+            // 创建VideoItem时不立即加载图片
+            auto video = std::make_shared<VideoItem>(filePath, false);
+            results.append(video);
         }
-    }
-    
-    // 递归扫描子目录
-    dir.setFilter(QDir::Dirs | QDir::NoDotAndDotDot);
-    dir.setNameFilters(QStringList());
-    QStringList subdirs = dir.entryList();
-    for (const QString &subdir : subdirs) {
-        QString subdirPath = dir.filePath(subdir);
-        auto subdirResults = findVideosInDirectory(subdirPath);
-        results.append(subdirResults);
     }
     
     return results;
