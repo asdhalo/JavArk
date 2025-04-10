@@ -56,6 +56,7 @@ private slots:
     void onDecreaseThumbnailSize();
     void onToggleSortOrder();    // 新增：切换排序方式
     void onSearchTextChanged(const QString &text); // 新增：处理搜索文本变化
+    void onVideoPosterReady(std::shared_ptr<VideoItem> video); // 新增：处理封面生成完成
 
 private:
     void createUI();
@@ -130,6 +131,7 @@ public:
     
     std::shared_ptr<VideoItem> video() const { return m_video; }
     void setThumbnailSize(int size);
+    void updateThumbnail();
     
     // 新增：设置封面模式
     void setUseFanartMode(bool useFanart) { m_useFanartMode = useFanart; update(); }

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(JavArk VERSION 3.1.2 LANGUAGES CXX)
+project(JavArk VERSION 5.0.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -17,6 +17,20 @@ endif()
 set(CMAKE_PREFIX_PATH "D:/Qt6/6.8.3/msvc2022_64")
 
 find_package(Qt6 COMPONENTS Core Gui Widgets Concurrent REQUIRED)
+
+# 检查FFmpeg
+message(STATUS "Checking for FFmpeg...")
+find_program(FFMPEG_EXECUTABLE ffmpeg)
+find_program(FFPROBE_EXECUTABLE ffprobe)
+
+if(FFMPEG_EXECUTABLE AND FFPROBE_EXECUTABLE)
+    message(STATUS "FFmpeg found: ${FFMPEG_EXECUTABLE}")
+    message(STATUS "FFprobe found: ${FFPROBE_EXECUTABLE}")
+else()
+    message(WARNING "FFmpeg not found. Video frame extraction feature will not work properly.")
+    message(WARNING "Please install FFmpeg and make sure it's in your PATH.")
+endif()
+
 
 set(SOURCES
     src/main.cpp
@@ -77,7 +91,7 @@ if(WIN32)
     install(CODE "
         message(STATUS \"Running windeployqt...\")
         execute_process(
-            COMMAND \"${WINDEPLOYQT_EXECUTABLE}\" 
+            COMMAND \"${WINDEPLOYQT_EXECUTABLE}\"
                     --no-translations
                     --no-system-d3d-compiler
                     --no-opengl-sw
@@ -89,7 +103,7 @@ endif()
 # CPack配置
 set(CPACK_PACKAGE_NAME "JavArk")
 set(CPACK_PACKAGE_VENDOR "JavArk")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "视频管理库应用程序")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "视频管理库应用程序 - 支持自动提取视频封面")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "JavArk")
 
@@ -115,4 +129,4 @@ if(WIN32)
     )
 endif()
 
-include(CPack) 
+include(CPack)

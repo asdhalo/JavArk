@@ -9,7 +9,8 @@
 VideoItem::VideoItem(const QString &filePath, bool loadImagesNow)
     : m_filePath(filePath),
       m_fileSize(0),
-      m_imagesLoaded(false)
+      m_imagesLoaded(false),
+      m_needsPosterGeneration(false)
 {
     QFileInfo fileInfo(filePath);
     m_fileName = fileInfo.fileName();
@@ -17,7 +18,7 @@ VideoItem::VideoItem(const QString &filePath, bool loadImagesNow)
     m_fileSize = fileInfo.size();
     m_creationTime = fileInfo.birthTime();
     m_modifiedTime = fileInfo.lastModified();
-    
+
     // 只在需要时加载图片
     if (loadImagesNow) {
         loadImages();
@@ -32,7 +33,7 @@ void VideoItem::loadImages()
     }
 
     QDir folder(m_folderPath);
-    
+
     // 查找海报图片
     QString posterPath = folder.filePath("poster.jpg");
     if (QFileInfo::exists(posterPath)) {
@@ -42,14 +43,35 @@ void VideoItem::loadImages()
             createDefaultPoster();
         }
     } else {
-        // 使用默认海报
+        // 先检查picture文件夹中是否有提取的封面图
+        QDir rootDir(QFileInfo(m_folderPath).absolutePath());
+        QString pictureDir = rootDir.filePath("picture");
+
+        if (QDir(pictureDir).exists()) {
+            QString baseName = QFileInfo(m_fileName).completeBaseName();
+            QString extractedPosterPath = QDir(pictureDir).filePath(baseName + ".jpg");
+
+            if (QFileInfo::exists(extractedPosterPath)) {
+                QPixmap extractedPoster(extractedPosterPath);
+                if (!extractedPoster.isNull()) {
+                    // 同时将提取的封面图设置为海报图和背景图
+                    m_posterImage = extractedPoster;
+                    m_fanartImage = extractedPoster;  // 同时用于背景图
+                    qDebug() << "加载提取的封面图(同时用于海报和背景):" << extractedPosterPath;
+                    m_imagesLoaded = true;
+                    return;
+                }
+            }
+        }
+
+        // 如果没有提取的封面图，使用默认海报
         m_posterImage = QPixmap(":/icons/default_poster.png");
         if (m_posterImage.isNull()) {
             qDebug() << "无法加载默认海报图片";
             createDefaultPoster();
         }
     }
-    
+
     // 查找背景图片
     QString fanartPath = folder.filePath("fanart.jpg");
     if (QFileInfo::exists(fanartPath)) {
@@ -75,7 +97,7 @@ void VideoItem::createDefaultPoster()
     // 创建一个简单的默认海报图片
     m_posterImage = QPixmap(120, 180);
     m_posterImage.fill(Qt::lightGray);
-    
+
     QPainter painter(&m_posterImage);
     painter.setPen(Qt::black);
     painter.drawRect(0, 0, m_posterImage.width()-1, m_posterImage.height()-1);
@@ -87,7 +109,7 @@ void VideoItem::createDefaultFanart()
     // 创建一个简单的默认背景图片
     m_fanartImage = QPixmap(320, 180);
     m_fanartImage.fill(Qt::darkGray);
-    
+
     QPainter painter(&m_fanartImage);
     painter.setPen(Qt::white);
     painter.drawRect(0, 0, m_fanartImage.width()-1, m_fanartImage.height()-1);
@@ -113,4 +135,70 @@ const QPixmap& VideoItem::fanartImage() const
         const_cast<VideoItem*>(this)->loadImages();
     }
     return m_fanartImage;
-} 
+}
+
+bool VideoItem::hasPoster() const
+{
+    QDir folder(m_folderPath);
+
+    // 检查是否存在poster.jpg
+    QString posterPath = folder.filePath("poster.jpg");
+    if (QFileInfo::exists(posterPath)) {
+        return true;
+    }
+
+    // 检查是否存在fanart.jpg
+    QString fanartPath = folder.filePath("fanart.jpg");
+    if (QFileInfo::exists(fanartPath)) {
+        return true;
+    }
+
+    return false;
+}
+
+bool VideoItem::checkExtractedPoster(const QString &pictureDir)
+{
+    if (pictureDir.isEmpty()) {
+        return false;
+    }
+
+    // 根据视频文件名生成封面图路径
+    QString baseName = QFileInfo(m_fileName).completeBaseName();
+    QString extractedPosterPath = QDir(pictureDir).filePath(baseName + ".jpg");
+
+    // 检查并加载提取的封面图
+    // 注意：提取的视频帧同时用于海报图(poster)和背景图(fanart)
+    return loadExtractedPoster(extractedPosterPath);
+}
+
+bool VideoItem::loadExtractedPoster(const QString &posterPath)
+{
+    if (!QFileInfo::exists(posterPath)) {
+        return false;
+    }
+
+    QPixmap extractedPoster(posterPath);
+    if (extractedPoster.isNull()) {
+        qDebug() << "无法加载提取的封面图:" << posterPath;
+        return false;
+    }
+
+    // 同时将提取的封面图设置为海报图和背景图
+    m_posterImage = extractedPoster;
+    m_fanartImage = extractedPoster;  // 同时用于背景图
+    m_imagesLoaded = true;
+    qDebug() << "提取的封面图同时用于海报和背景:" << posterPath;
+    return true;
+}
+
+// 新增：设置是否需要生成封面
+void VideoItem::setNeedsPosterGeneration(bool needs)
+{
+    m_needsPosterGeneration = needs;
+}
+
+// 新增：检查是否需要生成封面
+bool VideoItem::needsPosterGeneration() const
+{
+    return m_needsPosterGeneration;
+}

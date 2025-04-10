@@ -91,6 +91,17 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_library, &VideoLibrary::scanStarted, this, &MainWindow::onScanStarted);
     connect(m_library, &VideoLibrary::scanProgress, this, &MainWindow::onScanProgress);
     connect(m_library, &VideoLibrary::scanFinished, this, &MainWindow::onScanFinished);
+    connect(m_library, &VideoLibrary::videoPosterReady, this, &MainWindow::onVideoPosterReady);
+    
+    // 连接工具栏按钮
+    connect(m_addDirButton, &QPushButton::clicked, this, &MainWindow::onAddDirectory);
+    connect(m_removeDirButton, &QPushButton::clicked, this, &MainWindow::onRemoveDirectory);
+    connect(m_scanButton, &QPushButton::clicked, this, &MainWindow::onScanLibrary);
+    connect(m_sortButton, &QPushButton::clicked, this, &MainWindow::onToggleSortOrder);
+    connect(m_toggleCoverButton, &QPushButton::clicked, this, &MainWindow::onToggleCoverMode);
+    connect(m_increaseButton, &QPushButton::clicked, this, &MainWindow::onIncreaseThumbnailSize);
+    connect(m_decreaseButton, &QPushButton::clicked, this, &MainWindow::onDecreaseThumbnailSize);
+    connect(m_searchEdit, &QLineEdit::textChanged, this, &MainWindow::onSearchTextChanged);
     
     // 加载设置
     loadSettings();
@@ -137,43 +148,36 @@ void MainWindow::createUI()
     m_addDirButton->setIcon(QIcon(":/icons/add.png"));
     m_addDirButton->setFixedHeight(32);
     m_addDirButton->setStyleSheet("background-color: #2C5F9B; color: white;");
-    connect(m_addDirButton, &QPushButton::clicked, this, &MainWindow::onAddDirectory);
     
     m_removeDirButton = new QPushButton(tr("移除目录"), this);
     m_removeDirButton->setIcon(QIcon(":/icons/delete.png"));
     m_removeDirButton->setFixedHeight(32);
-    connect(m_removeDirButton, &QPushButton::clicked, this, &MainWindow::onRemoveDirectory);
     
     m_scanButton = new QPushButton(tr("扫描媒体库"), this);
     m_scanButton->setIcon(QIcon(":/icons/refresh.png"));
     m_scanButton->setFixedHeight(32);
     m_scanButton->setStyleSheet("background-color: #2C5F9B; color: white;");
-    connect(m_scanButton, &QPushButton::clicked, this, &MainWindow::onScanLibrary);
     
     // 创建排序按钮
     m_sortButton = new QPushButton(tr("排序：按文件名"), this);
     m_sortButton->setIcon(QIcon(":/icons/sort.png"));
     m_sortButton->setFixedHeight(32);
     m_sortButton->setStyleSheet("background-color: #505060; color: white; font-weight: bold;");
-    connect(m_sortButton, &QPushButton::clicked, this, &MainWindow::onToggleSortOrder);
     
     // 创建切换封面模式按钮
     m_toggleCoverButton = new QPushButton(tr("切换封面"), this);
     m_toggleCoverButton->setIcon(QIcon(":/icons/switch.png"));
     m_toggleCoverButton->setFixedHeight(32);
     m_toggleCoverButton->setStyleSheet("background-color: #505060; color: white; font-weight: bold;");
-    connect(m_toggleCoverButton, &QPushButton::clicked, this, &MainWindow::onToggleCoverMode);
     
     // 创建缩略图尺寸调整按钮
     m_increaseButton = new QPushButton("+", this);
     m_increaseButton->setFixedSize(32, 32);
     m_increaseButton->setStyleSheet("font-weight: bold; font-size: 14px;");
-    connect(m_increaseButton, &QPushButton::clicked, this, &MainWindow::onIncreaseThumbnailSize);
     
     m_decreaseButton = new QPushButton("-", this);
     m_decreaseButton->setFixedSize(32, 32);
     m_decreaseButton->setStyleSheet("font-weight: bold; font-size: 14px;");
-    connect(m_decreaseButton, &QPushButton::clicked, this, &MainWindow::onDecreaseThumbnailSize);
     
     // 创建搜索框
     m_searchEdit = new QLineEdit(this);
@@ -186,7 +190,6 @@ void MainWindow::createUI()
     QAction* searchIcon = new QAction(this);
     searchIcon->setIcon(QIcon(":/icons/search.png"));
     m_searchEdit->addAction(searchIcon, QLineEdit::LeadingPosition);
-    connect(m_searchEdit, &QLineEdit::textChanged, this, &MainWindow::onSearchTextChanged);
     
     // 创建状态标签和进度条
     m_statusLabel = new QLabel(tr("就绪"), this);
@@ -763,6 +766,18 @@ void MainWindow::refreshVideoDisplay()
     adjustGridColumns(); // 根据需要调整网格列数
 }
 
+// 新增：处理封面生成完成的槽函数
+void MainWindow::onVideoPosterReady(std::shared_ptr<VideoItem> video)
+{
+    // 找到对应的VideoWidget并更新它的缩略图
+    for (VideoWidget *widget : m_videoWidgets) {
+        if (widget->video() == video) {
+            widget->updateThumbnail(); // 调用VideoWidget的更新方法
+            break;
+        }
+    }
+}
+
 // ------ VideoWidget 实现 ------
 
 VideoWidget::VideoWidget(std::shared_ptr<VideoItem> video, int thumbnailSize, QWidget *parent)
@@ -795,9 +810,8 @@ VideoWidget::VideoWidget(std::shared_ptr<VideoItem> video, int thumbnailSize, QW
 void VideoWidget::setThumbnailSize(int size)
 {
     m_thumbnailSize = size;
-    setFixedSize(m_thumbnailSize, m_thumbnailSize + 30);
-    m_titleLabel->setGeometry(0, m_thumbnailSize, m_thumbnailSize, 30);
-    update();
+    setFixedSize(m_thumbnailSize + 10, m_thumbnailSize + 30); // 考虑边框和标签的高度
+    update(); // 重新绘制以应用新的尺寸
 }
 
 void VideoWidget::mousePressEvent(QMouseEvent *event)
@@ -897,4 +911,10 @@ void VideoWidget::leaveEvent(QEvent *event)
     Q_UNUSED(event);
     m_hover = false;
     update();
+}
+
+// 新增：更新缩略图方法实现
+void VideoWidget::updateThumbnail()
+{
+    update(); // 调用QWidget::update()来触发重绘
 } 
