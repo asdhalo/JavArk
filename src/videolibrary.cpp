@@ -12,6 +12,7 @@
 #include <QStandardPaths>
 #include <QRandomGenerator>
 #include <QTemporaryDir>
+#include <QFuture>
 
 // 支持的视频扩展名
 static const QStringList VIDEO_EXTENSIONS = {
@@ -24,23 +25,8 @@ VideoLibrary::VideoLibrary(QObject *parent)
       m_watcher(new QFutureWatcher<QVector<std::shared_ptr<VideoItem>>>(this)),
       m_pendingScanCount(0)
 {
-    // 连接信号和槽
-    connect(m_watcher, &QFutureWatcher<QVector<std::shared_ptr<VideoItem>>>::resultReadyAt,
-            this, [this](int index) {
-                auto results = m_watcher->resultAt(index);
-                for (const auto &video : results) {
-                    m_videos.append(video);
-                    emit videoAdded(video);
-                    // 如果视频需要生成封面，添加到待处理列表
-                    if (video->needsPosterGeneration()) {
-                        m_videosNeedingPoster.append(video);
-                    }
-                }
-                emit scanProgress(index + 1, m_pendingScanCount);
-            });
-
-    connect(m_watcher, &QFutureWatcher<QVector<std::shared_ptr<VideoItem>>>::finished,
-            this, &VideoLibrary::scanDirectoryFinished);
+    // 这个构造函数不再需要连接 m_watcher 的信号
+    // 现在我们为每个目录的扫描创建单独的 watcher 并在 lambda 中处理结果
 }
 
 VideoLibrary::~VideoLibrary()
@@ -66,27 +52,26 @@ void VideoLibrary::removeDirectory(const QString &path, bool removeFiles)
     if (m_directories.contains(absPath)) {
         m_directories.remove(absPath);
 
-        // 找出需要删除的视频
-        QVector<std::shared_ptr<VideoItem>> videosToRemove;
-        for (const auto& video : m_videos) {
-            if (video->folderPath().startsWith(absPath)) {
-                videosToRemove.append(video);
+        // 找出需要删除的视频 - 现在需要从哈希表中删除
+        if (m_videosByDirectory.contains(absPath)) {
+            QVector<std::shared_ptr<VideoItem>>& videosInDir = m_videosByDirectory[absPath];
+            // 如果需要物理删除文件
+            if (removeFiles) {
+                for (const auto& video : videosInDir) {
+                    removeVideoFiles(video);
+                }
             }
+            // 从哈希表中移除该目录及其视频
+            m_videosByDirectory.remove(absPath);
         }
 
-        // 如果需要物理删除文件
-        if (removeFiles) {
-            for (const auto& video : videosToRemove) {
-                removeVideoFiles(video);
-            }
-        }
-
-        // 从列表中移除视频
-        auto it = std::remove_if(m_videos.begin(), m_videos.end(),
+        // 从待生成封面列表中移除相关视频
+        auto it = std::remove_if(m_videosNeedingPoster.begin(), m_videosNeedingPoster.end(),
                          [&absPath](const std::shared_ptr<VideoItem>& video) {
                              return video->folderPath().startsWith(absPath);
                          });
-        m_videos.erase(it, m_videos.end());
+        m_videosNeedingPoster.erase(it, m_videosNeedingPoster.end());
+
     }
 }
 
@@ -95,9 +80,9 @@ QStringList VideoLibrary::directories() const
     return QStringList(m_directories.begin(), m_directories.end());
 }
 
-const QVector<std::shared_ptr<VideoItem>>& VideoLibrary::videos() const
+const QHash<QString, QVector<std::shared_ptr<VideoItem>>>& VideoLibrary::videosByDirectory() const
 {
-    return m_videos;
+    return m_videosByDirectory;
 }
 
 void VideoLibrary::scanLibrary()
@@ -110,8 +95,8 @@ void VideoLibrary::scanLibrary()
 
     emit scanStarted();
 
-    // 清空视频列表
-    m_videos.clear();
+    // 清空视频哈希表
+    m_videosByDirectory.clear();
 
     // 获取目录列表
     QStringList dirs = directories();
@@ -122,21 +107,54 @@ void VideoLibrary::scanLibrary()
         return;
     }
 
-    // 创建扫描任务
-    QFuture<QVector<std::shared_ptr<VideoItem>>> future = QtConcurrent::mapped(dirs,
-        [this](const QString &dir) {
-            return this->findVideosInDirectory(dir);
-        });
+    // 创建扫描任务，使用共享计数器来跟踪完成情况
+    std::shared_ptr<int> completedCount = std::make_shared<int>(0);
 
-    // 监视结果
-    m_watcher->setFuture(future);
-}
+    for (const QString &dir : dirs) {
+        // 直接在 lambda 中捕获目录路径
+        auto futureWatcher = new QFutureWatcher<QVector<std::shared_ptr<VideoItem>>>(this);
+        QFuture<QVector<std::shared_ptr<VideoItem>>> future = QtConcurrent::run(
+            [this, dir]() {
+                return this->findVideosInDirectory(dir);
+            }
+        );
 
-void VideoLibrary::scanDirectoryFinished()
-{
-    emit scanFinished();
-    // 扫描完成后开始生成封面
-    startPosterGeneration();
+        // 连接 finished 信号
+        connect(futureWatcher, &QFutureWatcher<QVector<std::shared_ptr<VideoItem>>>::finished, this,
+            [this, dir, completedCount, futureWatcher]() {
+                // 使用 lambda 捕获的 dir 参数，而不是从 map 中查找
+                QVector<std::shared_ptr<VideoItem>> results = futureWatcher->result();
+
+                if (!m_videosByDirectory.contains(dir)) {
+                    m_videosByDirectory[dir] = QVector<std::shared_ptr<VideoItem>>();
+                }
+
+                for (const auto &video : results) {
+                    m_videosByDirectory[dir].append(video);
+                    emit videoAdded(dir, video);
+                    if (video->needsPosterGeneration()) {
+                        m_videosNeedingPoster.append(video);
+                    }
+                }
+
+                // 增加完成计数
+                (*completedCount)++;
+                emit scanProgress(*completedCount, m_pendingScanCount);
+
+                // 所有目录都扫描完成时，发送完成信号并开始生成封面
+                if (*completedCount >= m_pendingScanCount) {
+                    emit scanFinished();
+                    startPosterGeneration();
+                }
+
+                // 清理 watcher
+                futureWatcher->deleteLater();
+            }
+        );
+
+        // 开始监视结果
+        futureWatcher->setFuture(future);
+    }
 }
 
 QVector<std::shared_ptr<VideoItem>> VideoLibrary::findVideosInDirectory(const QString &path)
@@ -303,17 +321,22 @@ void VideoLibrary::loadLibraryConfig(const QString &filePath)
 {
     QSettings settings(filePath, QSettings::IniFormat);
 
-    // 加载目录
+    // 加载视频库目录
     m_directories.clear();
-    int dirCount = settings.beginReadArray("Directories");
-    for (int i = 0; i < dirCount; ++i) {
+    int size = settings.beginReadArray("Directories");
+    for (int i = 0; i < size; ++i) {
         settings.setArrayIndex(i);
-        QString path = settings.value("Path").toString();
-        if (!path.isEmpty()) {
-            addDirectory(path);
+        QString dirPath = settings.value("Path").toString();
+        if (!dirPath.isEmpty() && QDir(dirPath).exists()) {
+            m_directories.insert(dirPath);
+        } else {
+             qWarning() << "配置文件中保存的目录无效或不存在:" << dirPath;
         }
     }
     settings.endArray();
+
+    // 加载后可以触发一次扫描
+    // scanLibrary(); // 或者由调用者决定何时扫描
 }
 
 bool VideoLibrary::removeVideoFiles(const std::shared_ptr<VideoItem>& video)
@@ -362,96 +385,83 @@ bool VideoLibrary::removeVideoFiles(const std::shared_ptr<VideoItem>& video)
 
 void VideoLibrary::removeDirectoryCovers(const QString &dirPath)
 {
-    try {
-        QDir dir(dirPath);
+    QString pictureDir = QDir(dirPath).filePath("picture");
+    if (!QDir(pictureDir).exists()) {
+        return;
+    }
 
-        qDebug() << "开始删除目录下的封面图片:" << dirPath;
-
-        // 递归遍历目录
-        QStringList subdirs = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-        for (const QString &subdir : subdirs) {
-            removeDirectoryCovers(dir.filePath(subdir));
+    QDirIterator it(pictureDir, QStringList() << "*.jpg", QDir::Files);
+    while (it.hasNext()) {
+        QString coverPath = it.next();
+        if (!QFile::remove(coverPath)) {
+            qWarning() << "无法删除封面文件:" << coverPath;
         }
-
-        // 删除当前目录下的封面图片
-        QStringList filters;
-        filters << "poster.jpg" << "fanart.jpg"; // 通用封面
-
-        // 添加可能存在的特定视频封面格式
-        filters << "*-poster.jpg" << "*-fanart.jpg" << "*.png" << "*.jpeg";
-
-        // 设置过滤器
-        dir.setNameFilters(filters);
-        dir.setFilter(QDir::Files);
-        QStringList coverFiles = dir.entryList();
-
-        qDebug() << "在目录" << dirPath << "中找到" << coverFiles.size() << "个封面图片";
-
-        // 删除每个封面文件
-        for (const QString &file : coverFiles) {
-            QString filePath = dir.filePath(file);
-            QFile coverFile(filePath);
-
-            // 确保文件不是只读的
-            QFile::setPermissions(filePath, QFile::ReadOwner | QFile::WriteOwner);
-
-            if (coverFile.remove()) {
-                qDebug() << "成功删除封面图片:" << filePath;
-            } else {
-                qDebug() << "无法删除封面图片:" << filePath << " - " << coverFile.errorString();
-
-                // 尝试使用系统API删除文件
-                if (QFile::exists(filePath)) {
-                    bool result = QFile::remove(filePath);
-                    qDebug() << "使用系统API删除文件:" << filePath << (result ? "成功" : "失败");
-                }
-            }
-        }
-    } catch (const std::exception& e) {
-        qDebug() << "删除封面图片时出错:" << e.what();
-    } catch (...) {
-        qDebug() << "删除封面图片时发生未知错误";
     }
 }
 
-// 新增方法：开始异步生成封面
+// 将视频添加到 m_videosByDirectory 而不是 m_videos
 void VideoLibrary::startPosterGeneration()
 {
     if (m_videosNeedingPoster.isEmpty()) {
         return;
     }
 
-    qDebug() << "开始异步生成封面图，共" << m_videosNeedingPoster.size() << "个视频";
+    qInfo() << "开始异步生成" << m_videosNeedingPoster.size() << "个视频的封面...";
 
-    // 使用QtConcurrent::run在后台线程执行封面生成
-    for (const auto& video : m_videosNeedingPoster) {
-        QtConcurrent::run([this, video]() {
-            QString pictureDir = ensurePictureDirectory(video->folderPath());
-            QString baseName = QFileInfo(video->fileName()).completeBaseName();
-            QString outputPath = QDir(pictureDir).filePath(baseName + ".jpg");
+    // 使用 QtConcurrent::map 进行异步处理
+    QFuture<void> future = QtConcurrent::map(m_videosNeedingPoster, [this](std::shared_ptr<VideoItem> video) {
+        QString pictureDir = ensurePictureDirectory(video->folderPath());
+        // 使用与VideoItem::checkExtractedPoster相同的文件名格式
+        QString baseName = QFileInfo(video->fileName()).completeBaseName();
+        QString posterPath = QDir(pictureDir).filePath(baseName + ".jpg");
 
-            // 提取视频帧作为封面图
-            if (extractFrameFromVideo(video->filePath(), outputPath)) {
-                // 封面生成成功，通知主线程
-                QMetaObject::invokeMethod(this, "processGeneratedPoster", Qt::QueuedConnection,
-                                          Q_ARG(std::shared_ptr<VideoItem>, video));
-            }
-        });
-    }
+        if (!QFileInfo::exists(posterPath)) { // 再次检查，以防万一
+             if (extractFrameFromVideo(video->filePath(), posterPath)) {
+                // 使用 VideoItem 提供的公有方法加载生成的封面图片
+                bool loaded = video->checkExtractedPoster(pictureDir);
+                qDebug() << "封面生成完成，加载状态:" << loaded << "路径:" << posterPath;
+
+                 // 在主线程中处理UI更新或信号发射
+                 QMetaObject::invokeMethod(this, "processGeneratedPoster", Qt::QueuedConnection,
+                                         Q_ARG(std::shared_ptr<VideoItem>, video));
+             } else {
+                 qWarning() << "无法为视频生成封面:" << video->filePath();
+             }
+        }
+    });
+
+    // 可以选择性地添加一个 QFutureWatcher 来监视封面生成的完成
+    // 但目前只在完成后处理单个视频
 
     // 清空待处理列表
     m_videosNeedingPoster.clear();
 }
 
-// 新增槽：处理生成的封面
 void VideoLibrary::processGeneratedPoster(std::shared_ptr<VideoItem> video)
 {
-    if (video) {
-        qDebug() << "封面生成完成:" << video->fileName();
-        // 尝试加载新生成的封面
-        QString pictureDir = ensurePictureDirectory(video->folderPath());
-        video->checkExtractedPoster(pictureDir); // 这会加载图片并设置m_imagesLoaded
-        // 发射信号通知界面更新
-        emit videoPosterReady(video);
+    if (!video) {
+        qWarning() << "处理生成的封面时收到空视频对象";
+        return;
     }
+
+    // 即使没有检测到海报，也发送信号更新UI
+    // 因为封面可能已经生成但没有被正确检测到
+    qDebug() << "封面已生成并准备就绪:" << video->fileName();
+
+    // 强制重新加载图片
+    QString pictureDir = ensurePictureDirectory(video->folderPath());
+    video->checkExtractedPoster(pictureDir);
+
+    // 发送信号更新UI
+    emit videoPosterReady(video);
+}
+
+// 添加获取所有视频列表的实现
+QVector<std::shared_ptr<VideoItem>> VideoLibrary::allVideosFlattened() const
+{
+    QVector<std::shared_ptr<VideoItem>> allVideos;
+    for (const auto& videoList : m_videosByDirectory.values()) {
+        allVideos.append(videoList);
+    }
+    return allVideos;
 }

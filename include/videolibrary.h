@@ -8,6 +8,7 @@
 #include <QFuture>
 #include <QFutureWatcher>
 #include <QProcess>
+#include <QHash>
 #include <memory>
 #include "videoitem.h"
 
@@ -25,7 +26,8 @@ public:
     QStringList directories() const;
 
     // 获取视频列表
-    const QVector<std::shared_ptr<VideoItem>>& videos() const;
+    const QHash<QString, QVector<std::shared_ptr<VideoItem>>>& videosByDirectory() const;
+    QVector<std::shared_ptr<VideoItem>> allVideosFlattened() const;
 
     // 扫描视频库
     void scanLibrary();
@@ -38,11 +40,10 @@ signals:
     void scanStarted();
     void scanProgress(int current, int total);
     void scanFinished();
-    void videoAdded(std::shared_ptr<VideoItem> video);
+    void videoAdded(const QString& directory, std::shared_ptr<VideoItem> video);
     void videoPosterReady(std::shared_ptr<VideoItem> video);
 
 private slots:
-    void scanDirectoryFinished();
     void processGeneratedPoster(std::shared_ptr<VideoItem> video);
 
 private:
@@ -71,7 +72,7 @@ private:
     void startPosterGeneration();
 
     QSet<QString> m_directories;  // 视频库目录集合
-    QVector<std::shared_ptr<VideoItem>> m_videos;  // 视频项目列表
+    QHash<QString, QVector<std::shared_ptr<VideoItem>>> m_videosByDirectory;
     QVector<std::shared_ptr<VideoItem>> m_videosNeedingPoster;
 
     // 多线程支持

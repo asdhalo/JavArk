@@ -8,9 +8,9 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-# 启用安装目标的相对路径
+# 启用安装目标的相对路径 - 便携版
 if(WIN32)
-    set(CMAKE_INSTALL_PREFIX "JavArk")
+    set(CMAKE_INSTALL_PREFIX "JavArk-Portable")
 endif()
 
 # 设置Qt6的路径
@@ -74,11 +74,26 @@ if(WIN32)
     endif()
 endif()
 
-# 安装规则
-install(TARGETS ${PROJECT_NAME} DESTINATION bin)
+# 安装规则 - 便携版直接安装到根目录
+install(TARGETS ${PROJECT_NAME} DESTINATION .)
 
-# 安装资源文件和配置文件(如果有)
-# install(DIRECTORY resources DESTINATION .)
+# 安装资源文件和配置文件
+# 创建日志目录
+install(DIRECTORY DESTINATION logs)
+
+# 安装FFmpeg文件
+if(FFMPEG_EXECUTABLE AND FFPROBE_EXECUTABLE)
+    get_filename_component(FFMPEG_DIR "${FFMPEG_EXECUTABLE}" DIRECTORY)
+    install(FILES
+        "${FFMPEG_EXECUTABLE}"
+        "${FFPROBE_EXECUTABLE}"
+        DESTINATION .
+    )
+
+    # 安装FFmpeg依赖的DLL文件
+    file(GLOB FFMPEG_DLLS "${FFMPEG_DIR}/*.dll")
+    install(FILES ${FFMPEG_DLLS} DESTINATION .)
+endif()
 
 # 使用windeployqt工具部署Qt依赖
 if(WIN32)
@@ -95,38 +110,21 @@ if(WIN32)
                     --no-translations
                     --no-system-d3d-compiler
                     --no-opengl-sw
-                    \"\${CMAKE_INSTALL_PREFIX}/bin/${PROJECT_NAME}.exe\"
+                    \"\${CMAKE_INSTALL_PREFIX}/${PROJECT_NAME}.exe\"
         )
     ")
 endif()
 
-# CPack配置
-set(CPACK_PACKAGE_NAME "JavArk")
+# CPack配置 - 只使用ZIP包便于U盘便携版
+set(CPACK_PACKAGE_NAME "JavArk-Portable")
 set(CPACK_PACKAGE_VENDOR "JavArk")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "视频管理库应用程序 - 支持自动提取视频封面")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "视频管理库应用程序 - 便携版")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
-set(CPACK_PACKAGE_INSTALL_DIRECTORY "JavArk")
+set(CPACK_PACKAGE_FILE_NAME "JavArk-Portable-${PROJECT_VERSION}")
 
 if(WIN32)
-    set(CPACK_GENERATOR "NSIS;ZIP")
-    set(CPACK_PACKAGE_EXECUTABLES "JavArk" "视频管理库")
-    set(CPACK_NSIS_DISPLAY_NAME "视频管理库")
-    set(CPACK_NSIS_PACKAGE_NAME "视频管理库")
-    set(CPACK_NSIS_MODIFY_PATH ON)
-    set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
-    # 启用NSIS安装程序图标设置
-    set(CPACK_NSIS_MUI_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/app_icon.ico")
-    set(CPACK_NSIS_MUI_UNIICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/app_icon.ico")
-    set(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\\\${PROJECT_NAME}.exe")
-    set(CPACK_NSIS_HELP_LINK "https://www.example.com/help")
-    set(CPACK_NSIS_URL_INFO_ABOUT "https://www.example.com/about")
-    set(CPACK_NSIS_CONTACT "support@example.com")
-    set(CPACK_NSIS_CREATE_ICONS_EXTRA
-        "CreateShortCut '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\视频管理库.lnk' '$INSTDIR\\\\bin\\\\${PROJECT_NAME}.exe'"
-    )
-    set(CPACK_NSIS_DELETE_ICONS_EXTRA
-        "Delete '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\视频管理库.lnk'"
-    )
+    # 只使用ZIP包，不使用NSIS安装程序
+    set(CPACK_GENERATOR "ZIP")
 endif()
 
 include(CPack)

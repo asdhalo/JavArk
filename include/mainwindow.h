@@ -16,6 +16,8 @@
 #include <QMenu>
 #include <QAction>
 #include <QLineEdit>
+#include <QTabWidget>
+#include <QHash>
 #include <memory>
 #include "videolibrary.h"
 
@@ -46,7 +48,7 @@ protected:
 private slots:
     void onAddDirectory();
     void onScanLibrary();
-    void onVideoAdded(std::shared_ptr<VideoItem> video);
+    void onVideoAdded(const QString& directory, std::shared_ptr<VideoItem> video);
     void onScanStarted();
     void onScanProgress(int current, int total);
     void onScanFinished();
@@ -57,6 +59,16 @@ private slots:
     void onToggleSortOrder();    // 新增：切换排序方式
     void onSearchTextChanged(const QString &text); // 新增：处理搜索文本变化
     void onVideoPosterReady(std::shared_ptr<VideoItem> video); // 新增：处理封面生成完成
+    void updateDirectoryList();
+    void clearVideoWidgets();
+    void clearVideoWidgetsInTab(QWidget* tabContentWidget);
+    void adjustGridColumns();
+    void reLayoutVideos();
+    void reLayoutFilteredVideos();
+    void sortVideos();
+    void updateSortButtonText();
+    void filterVideos();
+    void refreshVideoDisplay();
 
 private:
     void createUI();
@@ -64,15 +76,8 @@ private:
     void createMenus();
     void saveSettings();
     void loadSettings();
-    void updateDirectoryList();
-    void clearVideoWidgets();
-    void adjustGridColumns();
-    void reLayoutVideos();
-    void reLayoutFilteredVideos(); // 新增：重新布局过滤后的视频
-    void sortVideos();           // 新增：排序视频
-    void updateSortButtonText(); // 新增：更新排序按钮文本
-    void filterVideos();         // 新增：根据搜索条件过滤视频
-    void refreshVideoDisplay(); // 新增：刷新视频网格显示
+    int calculateColumnsForTab(QWidget* tabContentWidget);
+    void reLayoutVideosInTab(QWidget* tabContentWidget);
 
     // 视频库
     VideoLibrary *m_library;
@@ -100,18 +105,18 @@ private:
     // 底部状态栏
     QHBoxLayout *m_bottomLayout;
     
-    // 视频显示区域
-    QScrollArea *m_scrollArea;
-    QWidget *m_scrollContent;
-    QGridLayout *m_gridLayout;
+    // 视频显示区域 - 修改为 QTabWidget
+    QTabWidget *m_tabWidget;
+    // 使用 QHash 管理每个标签页的内容 (QWidget 包含 QScrollArea 和 QGridLayout)
+    QHash<QString, QWidget*> m_tabContents;
+    // 使用 QHash 管理每个标签页的网格布局
+    QHash<QString, QGridLayout*> m_tabGridLayouts;
+    // 使用 QHash 管理每个标签页的视频小部件列表
+    QHash<QString, QList<VideoWidget*>> m_tabVideoWidgets;
     
     // 目录列表
     QMenu *m_dirMenu;
     QList<QAction*> m_dirActions;
-    
-    // 视频小部件
-    QList<VideoWidget*> m_videoWidgets;
-    QList<VideoWidget*> m_filteredVideoWidgets; // 新增：过滤后的视频列表
     
     // 显示设置
     int m_gridColumns;
@@ -127,14 +132,14 @@ class VideoWidget : public QWidget
     Q_OBJECT
 
 public:
-    VideoWidget(std::shared_ptr<VideoItem> video, int thumbnailSize, QWidget *parent = nullptr);
+    VideoWidget(std::shared_ptr<VideoItem> video, int thumbnailSize, bool useFanart, QWidget *parent = nullptr);
     
     std::shared_ptr<VideoItem> video() const { return m_video; }
     void setThumbnailSize(int size);
     void updateThumbnail();
     
     // 新增：设置封面模式
-    void setUseFanartMode(bool useFanart) { m_useFanartMode = useFanart; update(); }
+    void setUseFanartMode(bool useFanart);
     bool useFanartMode() const { return m_useFanartMode; }
     
     // 新增：选中状态管理
@@ -153,7 +158,7 @@ private:
     QLabel *m_titleLabel;
     int m_thumbnailSize;
     bool m_hover;
-    bool m_useFanartMode; // 是否使用背景图作为封面
+    bool m_useFanartMode; // 现在在构造函数中初始化
     bool m_selected;      // 新增：是否被选中
 };
 

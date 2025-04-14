@@ -27,10 +27,9 @@ VideoItem::VideoItem(const QString &filePath, bool loadImagesNow)
 
 void VideoItem::loadImages()
 {
-    // 如果图片已经加载过，直接返回
-    if (m_imagesLoaded) {
-        return;
-    }
+    // 强制重新加载图片，不再检查m_imagesLoaded
+    // 这样可以确保在生成新封面后能够重新加载
+    m_imagesLoaded = false;
 
     QDir folder(m_folderPath);
 
@@ -166,9 +165,28 @@ bool VideoItem::checkExtractedPoster(const QString &pictureDir)
     QString baseName = QFileInfo(m_fileName).completeBaseName();
     QString extractedPosterPath = QDir(pictureDir).filePath(baseName + ".jpg");
 
+    qDebug() << "检查提取的封面图:" << extractedPosterPath;
+
     // 检查并加载提取的封面图
     // 注意：提取的视频帧同时用于海报图(poster)和背景图(fanart)
-    return loadExtractedPoster(extractedPosterPath);
+    bool result = loadExtractedPoster(extractedPosterPath);
+
+    // 如果找不到，尝试其他可能的文件名格式
+    if (!result) {
+        // 尝试使用完整文件名（包括扩展名）
+        extractedPosterPath = QDir(pictureDir).filePath(m_fileName + ".jpg");
+        qDebug() << "尝试替代封面图路径:" << extractedPosterPath;
+        result = loadExtractedPoster(extractedPosterPath);
+
+        // 尝试使用完整文件名加_poster后缀
+        if (!result) {
+            extractedPosterPath = QDir(pictureDir).filePath(m_fileName + "_poster.jpg");
+            qDebug() << "尝试第二替代封面图路径:" << extractedPosterPath;
+            result = loadExtractedPoster(extractedPosterPath);
+        }
+    }
+
+    return result;
 }
 
 bool VideoItem::loadExtractedPoster(const QString &posterPath)
